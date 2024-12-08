@@ -471,6 +471,8 @@ Sentence Pair Scoring
 .. note::
     These models are supported in both offline and online inference via Score API.
 
+.. _supported_mm_models:
+
 Multimodal Language Models
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -488,8 +490,6 @@ Any combination of modalities joined by :code:`+` are supported.
 On the other hand, modalities separated by :code:`/` are mutually exclusive.
 
 - e.g.: :code:`T / I` means that the model supports text-only and image-only inputs, but not text-with-image inputs.
-
-.. _supported_vlms:
 
 Text Generation
 ---------------
@@ -547,15 +547,15 @@ Text Generation
     - ✅︎
     - 
   * - :code:`InternVLChatModel`
-    - InternVL2
+    - InternVL 2.5, Mono-InternVL, InternVL 2.0
     - T + I\ :sup:`E+`
-    - :code:`OpenGVLab/Mono-InternVL-2B`, :code:`OpenGVLab/InternVL2-4B`, :code:`OpenGVLab/InternVL2-8B`, etc.
+    - :code:`OpenGVLab/InternVL2_5-4B`, :code:`OpenGVLab/Mono-InternVL-2B`, :code:`OpenGVLab/InternVL2-4B`, etc.
     - 
     - ✅︎
   * - :code:`LlavaForConditionalGeneration`
     - LLaVA-1.5
     - T + I\ :sup:`E+`
-    - :code:`llava-hf/llava-1.5-7b-hf`, :code:`llava-hf/llava-1.5-13b-hf`, etc.
+    - :code:`llava-hf/llava-1.5-7b-hf`, :code:`TIGER-Lab/Mantis-8B-siglip-llama3` (see note), etc.
     -
     - ✅︎
   * - :code:`LlavaNextForConditionalGeneration`
@@ -646,8 +646,27 @@ Text Generation
 | :sup:`E` Pre-computed embeddings can be inputted for this modality.
 | :sup:`+` Multiple items can be inputted per text prompt for this modality.
 
+.. important::
+    To enable multiple multi-modal items per text prompt, you have to set :code:`limit_mm_per_prompt` (offline inference)
+    or :code:`--limit-mm-per-prompt` (online inference). For example, to enable passing up to 4 images per text prompt:
+
+    .. code-block:: python
+
+        llm = LLM(
+            model="Qwen/Qwen2-VL-7B-Instruct",
+            limit_mm_per_prompt={"image": 4},
+        )
+
+    .. code-block:: bash
+
+        vllm serve Qwen/Qwen2-VL-7B-Instruct --limit-mm-per-prompt image=4
+
 .. note::
   vLLM currently only supports adding LoRA to the language backbone of multimodal models.
+
+.. note::
+  To use :code:`TIGER-Lab/Mantis-8B-siglip-llama3`, you have to install their GitHub repo (:code:`pip install git+https://github.com/TIGER-AI-Lab/Mantis.git`)
+  and pass :code:`--hf_overrides '{"architectures": ["MantisForConditionalGeneration"]}'` when running vLLM.
 
 .. note::
   The official :code:`openbmb/MiniCPM-V-2` doesn't work yet, so we need to use a fork (:code:`HwwwH/MiniCPM-V-2`) for now.
