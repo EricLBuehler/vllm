@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import enum
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 from vllm.lora.request import LoRARequest
 from vllm.sampling_params import SamplingParams
-from vllm.sequence import RequestMetrics
-from vllm.v1.engine import EngineCoreRequest, FinishReason
+from vllm.v1.engine import (EngineCoreEvent, EngineCoreEventType,
+                            EngineCoreRequest, FinishReason)
 from vllm.v1.utils import ConstantList
 
 if TYPE_CHECKING:
@@ -20,10 +20,10 @@ class Request:
         self,
         request_id: str,
         prompt: Optional[str],
-        prompt_token_ids: List[int],
-        multi_modal_inputs: Optional[List["MultiModalKwargs"]],
-        multi_modal_hashes: Optional[List[str]],
-        multi_modal_placeholders: Optional[List["PlaceholderRange"]],
+        prompt_token_ids: list[int],
+        multi_modal_inputs: Optional[list["MultiModalKwargs"]],
+        multi_modal_hashes: Optional[list[str]],
+        multi_modal_placeholders: Optional[list["PlaceholderRange"]],
         sampling_params: SamplingParams,
         eos_token_id: Optional[int],
         arrival_time: float,
@@ -33,14 +33,10 @@ class Request:
         self.sampling_params = sampling_params
         # Because of LoRA, the eos token id can be different for each request.
         self.eos_token_id = eos_token_id
-        self.metrics = RequestMetrics(arrival_time=arrival_time,
-                                      last_token_time=arrival_time,
-                                      first_scheduled_time=None,
-                                      first_token_time=None,
-                                      time_in_queue=None)
         self.lora_request = lora_request
 
         self.status = RequestStatus.WAITING
+        self.events: list[EngineCoreEvent] = []
         self.stop_reason: Union[int, str, None] = None
         assert sampling_params.max_tokens is not None
         self.max_tokens = sampling_params.max_tokens
@@ -48,14 +44,15 @@ class Request:
         self.prompt = prompt
         self.prompt_token_ids = prompt_token_ids
         self.num_prompt_tokens = len(self.prompt_token_ids)
-        self._output_token_ids: List[int] = []
-        self._all_token_ids: List[int] = self.prompt_token_ids.copy()
+        self._output_token_ids: list[int] = []
+        self._all_token_ids: list[int] = self.prompt_token_ids.copy()
+        self.spec_token_ids: list[int] = []
         self.num_computed_tokens = 0
 
         # Multi-modal related
         self.mm_positions = multi_modal_placeholders or []
         self.mm_inputs = multi_modal_inputs or []
-        self.mm_hashes: List[str] = multi_modal_hashes or []
+        self.mm_hashes: list[str] = multi_modal_hashes or []
 
         # Sanity check
         assert len(self.mm_inputs) == len(self.mm_positions)
@@ -83,9 +80,24 @@ class Request:
             lora_request=request.lora_request,
         )
 
+    def queued(self, timestamp: Optional[float] = None) -> None:
+        self.events.append(
+            EngineCoreEvent.new_event(EngineCoreEventType.QUEUED, timestamp))
+
+    def scheduled(self, timestamp: Optional[float] = None) -> None:
+        self.events.append(
+            EngineCoreEvent.new_event(EngineCoreEventType.SCHEDULED,
+                                      timestamp))
+
+    def take_events(self) -> Optional[list[EngineCoreEvent]]:
+        if not self.events:
+            return None
+        events, self.events = self.events, []
+        return events
+
     def append_output_token_ids(
         self,
-        token_ids: Union[int, List[int]],
+        token_ids: Union[int, list[int]],
     ) -> None:
         if isinstance(token_ids, int):
             token_ids = [token_ids]
@@ -95,6 +107,10 @@ class Request:
     @property
     def num_tokens(self) -> int:
         return len(self._all_token_ids)
+
+    @property
+    def num_tokens_with_spec(self) -> int:
+        return len(self._all_token_ids) + len(self.spec_token_ids)
 
     @property
     def num_output_tokens(self) -> int:
