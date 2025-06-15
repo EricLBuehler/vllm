@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from typing import Optional, Union
 
@@ -77,7 +78,7 @@ class Mixer2RMSNormGated(CustomOp):
         input_dtype = x.dtype
         x = x * nn.functional.silu(gate.to(torch.float32))
         if not self.use_rms_norm:
-            return x
+            return x.to(input_dtype)
 
         if self.n_groups == 1:
             if self.tp_size > 1:
@@ -117,9 +118,11 @@ class Mixer2RMSNormGated(CustomOp):
         x: torch.Tensor,
         gate: torch.Tensor,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-
+        input_dtype = x.dtype
         if not self.use_rms_norm:
-            return x * nn.functional.silu(gate.to(torch.float32))
+            # Keep gate in float32 for numerical stability during silu
+            return x * nn.functional.silu(gate.to(
+                torch.float32)).to(input_dtype)
 
         if self.tp_size > 1 or self.n_groups != 1:
             return self.forward_native(x, gate)
@@ -316,7 +319,7 @@ class MambaMixer2(CustomOp):
             n_groups == 1,  # if there was only one group
         )
         intermediate_settings = (intermediate_size, 0, False)
-        head_setings = (self.num_heads, 0, False)
+        head_settings = (self.num_heads, 0, False)
 
         # - the weight already has a "weight_loader" attribute
         #   which set_weight_attrs will raise if we do not
@@ -369,7 +372,7 @@ class MambaMixer2(CustomOp):
                             intermediate_settings,
                             group_shard_settings,
                             group_shard_settings,
-                            head_setings,  # for dt
+                            head_settings,  # for dt
                         ],
                         self.tp_size,
                         tp_rank,
